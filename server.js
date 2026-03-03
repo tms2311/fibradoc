@@ -11,7 +11,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
-  port: 5432
+  port: 5432,
 });
 
 app.get("/", (req, res) => {
@@ -33,7 +33,6 @@ app.post("/caixas", async (req, res) => {
 });
 
 const PORT = 3000;
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Servidor rodando na porta " + PORT);
 });
