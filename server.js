@@ -33,6 +33,7 @@ app.post("/caixas", async (req, res) => {
 });
 
 const PORT = 3000;
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log("Servidor rodando na porta " + PORT);
 });
