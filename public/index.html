@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FibraDoc - Mapa</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; }
+    #topbar { padding:10px; display:flex; gap:10px; align-items:center; border-bottom:1px solid #ddd; }
+    #map { height: calc(100vh - 52px); }
+    button, select { padding:8px 10px; }
+    .hint { opacity:.7; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div id="topbar">
+    <b>FibraDoc</b>
+    <select id="modo">
+      <option value="navegar">Navegar</option>
+      <option value="add_caixa">Adicionar Caixa</option>
+      <option value="add_cto">Adicionar CTO</option>
+      <option value="desenhar_cabo">Desenhar Cabo</option>
+    </select>
+
+    <select id="caboSelect" style="display:none;"></select>
+    <button id="reload">Recarregar</button>
+    <span class="hint">Dica: selecione um modo e clique no mapa.</span>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
+  <script>
+    const API = ""; // mesma origem (fibradoc.local)
+
+    const map = L.map('map').setView([-23.9608, -46.3336], 13); // Santos/SP (ajuste depois)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    const layerCaixas = L.layerGroup().addTo(map);
+    const layerCtos   = L.layerGroup().addTo(map);
+    const layerTrechos = L.layerGroup().addTo(map);
+
+    const modo = document.getElementById("modo");
+    const caboSelect = document.getElementById("caboSelect");
+    const reloadBtn = document.getElementById("reload");
+
+    let cabosCache = [];
+
+    async function apiGet(path) {
+      const r = await fetch(API + path);
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+    async function apiPost(path, body) {
+      const r = await fetch(API + path, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body)
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    function render() {
+      layerCaixas.clearLayers();
+      layerCtos.clearLayers();
+      layerTrechos.clearLayers();
+
+      // caixas
+      state.caixas.forEach(c => {
+        if (c.latitude == null || c.longitude == null) return;
+        const m = L.marker([c.latitude, c.longitude]).addTo(layerCaixas);
+        m.bindPopup(`<b>Caixa</b><br>${c.codigo || ""} ${c.nome || ""}<br>ID: ${c.id}`);
+      });
+
+      // ctos
+      state.ctos.forEach(c => {
+        if (c.latitude == null || c.longitude == null) return;
+        const m = L.circleMarker([c.latitude, c.longitude], {radius:7}).addTo(layerCtos);
+        m.bindPopup(`<b>CTO</b><br>${c.codigo || ""} ${c.nome || ""}<br>Cap: ${c.capacidade || ""}<br>ID: ${c.id}`);
+      });
+
+      // trechos
+      state.trechos.forEach(t => {
+        if (!t.geom_json) return;
+        try {
+          const gj = (typeof t.geom_json === "string") ? JSON.parse(t.geom_json) : t.geom_json;
+          const geo = L.geoJSON(gj).addTo(layerTrechos);
+          geo.bindPopup(`<b>Trecho</b><br>Cabo ID: ${t.cabo_id}<br>${t.nome || ""}<br>ID: ${t.id}`);
+        } catch(e) {}
+      });
+    }
+
+    let state = { caixas: [], ctos: [], cabos: [], trechos: [] };
+
+    async function loadAll() {
+      const data = await apiGet("/mapa");
+      state = data;
+      cabosCache = data.cabos || [];
+      // preencher select de cabos
+      caboSelect.innerHTML = "";
+      cabosCache.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = `${c.codigo || "CABO"} (id ${c.id}) - ${c.fibras_total}f`;
+        caboSelect.appendChild(opt);
+      });
+      render();
+    }
+
+    reloadBtn.addEventListener("click", loadAll);
+
+    modo.addEventListener("change", () => {
+      caboSelect.style.display = (modo.value === "desenhar_cabo") ? "inline-block" : "none";
+    });
+
+    // Leaflet Draw para desenhar linha
+    const drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+    const drawControl = new L.Control.Draw({
+      draw: { polygon:false, rectangle:false, circle:false, circlemarker:false, marker:false, polyline:true },
+      edit: { featureGroup: drawnItems, edit:false, remove:false }
+    });
+
+    map.on("click", async (e) => {
+      try {
+        if (modo.value === "add_caixa") {
+          const codigo = prompt("Código da Caixa (ex: CX-001):", "");
+          const nome = prompt("Nome (opcional):", "");
+          await apiPost("/caixas", {
+            codigo, nome,
+            latitude: e.latlng.lat,
+            longitude: e.latlng.lng
+          });
+          await loadAll();
+        }
+
+        if (modo.value === "add_cto") {
+          const codigo = prompt("Código da CTO (ex: CTO-001):", "");
+          const nome = prompt("Nome (opcional):", "");
+          const capacidade = prompt("Capacidade (8/16/24):", "8");
+          await apiPost("/ctos", {
+            codigo, nome,
+            capacidade: Number(capacidade || 8),
+            latitude: e.latlng.lat,
+            longitude: e.latlng.lng
+          });
+          await loadAll();
+        }
+
+        if (modo.value === "desenhar_cabo") {
+          if (!cabosCache.length) {
+            alert("Cadastre um cabo primeiro em /cabos (API) ou vou te passar uma tela depois.");
+            return;
+          }
+          // habilita o draw somente nesse modo
+          map.addControl(drawControl);
+          alert("Agora desenhe a linha do cabo no mapa e dê duplo clique para finalizar.");
+          modo.value = "navegar";
+          caboSelect.style.display = "none";
+        }
+      } catch (err) {
+        alert("Erro: " + err);
+      }
+    });
+
+    map.on(L.Draw.Event.CREATED, async (event) => {
+      const layer = event.layer;
+      drawnItems.clearLayers();
+      drawnItems.addLayer(layer);
+
+      const geojson = layer.toGeoJSON(); // LineString
+      const caboId = Number(caboSelect.value);
+      const nome = prompt("Nome do trecho (ex: Rua X até Rua Y):", "");
+
+      try {
+        await apiPost("/trechos", {
+          cabo_id: caboId,
+          nome: nome || null,
+          geom_json: geojson
+        });
+        map.removeControl(drawControl);
+        drawnItems.clearLayers();
+        await loadAll();
+      } catch (err) {
+        alert("Erro ao salvar trecho: " + err);
+      }
+    });
+
+    // carregar inicial
+    loadAll();
+  </script>
+</body>
+</html>
