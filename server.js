@@ -226,6 +226,59 @@ app.post("/fusoes", async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+app.delete("/caixas/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    await pool.query(`DELETE FROM anexos WHERE entidade='caixa' AND entidade_id=$1`, [id]);
+    const r = await pool.query("DELETE FROM caixas WHERE id=$1 RETURNING *", [id]);
+
+    if (!r.rows[0]) return res.status(404).json({ error: "Caixa não encontrada" });
+    res.json({ ok: true, deleted: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/ctos/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    await pool.query(`DELETE FROM anexos WHERE entidade='cto' AND entidade_id=$1`, [id]);
+    const r = await pool.query("DELETE FROM ctos WHERE id=$1 RETURNING *", [id]);
+
+    if (!r.rows[0]) return res.status(404).json({ error: "CTO não encontrada" });
+    res.json({ ok: true, deleted: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete("/cabos/:id", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    const f = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM fusoes WHERE cabo_a_id=$1 OR cabo_b_id=$1",
+      [id]
+    );
+    if (f.rows[0].n > 0) {
+      return res.status(400).json({
+        error: "Não posso excluir: este cabo está em uso em fusões. Apague/ajuste as fusões antes."
+      });
+    }
+
+    await pool.query("DELETE FROM trechos WHERE cabo_id=$1", [id]);
+    await pool.query(`DELETE FROM anexos WHERE entidade='cabo' AND entidade_id=$1`, [id]);
+
+    const r = await pool.query("DELETE FROM cabos WHERE id=$1 RETURNING *", [id]);
+    if (!r.rows[0]) return res.status(404).json({ error: "Cabo não encontrado" });
+
+    res.json({ ok: true, deleted: r.rows[0] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 const PORT = 3000;
 app.listen(PORT, "0.0.0.0", () => {
