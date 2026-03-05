@@ -51,7 +51,31 @@
     const modo = document.getElementById("modo");
     const caboSelect = document.getElementById("caboSelect");
     const reloadBtn = document.getElementById("reload");
+    const novoCaboBtn = document.getElementById("novoCabo");
 
+novoCaboBtn.addEventListener("click", async () => {
+  try {
+    const codigo = prompt("Código do cabo (ex: CABO-01):", "CABO-01");
+    if (!codigo) return;
+
+    const nome = prompt("Nome (ex: Tronco Rua X):", "");
+    const tipo = prompt("Tipo (tronco/distribuicao/drop):", "tronco") || "tronco";
+
+    const fibras_total = prompt("Quantas fibras? (12/48/96):", "12") || "12";
+
+    await apiPost("/cabos", {
+      codigo,
+      nome,
+      tipo,
+      fibras_total: Number(fibras_total)
+    });
+
+    alert("Cabo criado ✅");
+    await loadAll();
+  } catch (err) {
+    alert("Erro ao criar cabo: " + err);
+  }
+});
     let cabosCache = [];
 
     async function apiGet(path) {
